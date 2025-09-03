@@ -8,7 +8,7 @@ terraform {
 }
 
 provider "dkron" {
-  host = "http://localhost:8080"
+  host = "http://localhost:8080/v1"
 }
 
 resource "dkron_job" "job1_dms" {
@@ -33,14 +33,8 @@ resource "dkron_job" "job1_dms" {
     "dms" = "cron:1"
   }
 
-  # out to syslog
-  processors {
-    forward = "true"
-    type    = "syslog"
-  }
-
   # output to stdin/stdout
   processors {
-    type = "log"
+    type    = "log"
   }
 }
