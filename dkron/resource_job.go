@@ -1,15 +1,10 @@
 package dkron
 
 import (
-	"bytes"
 	"context"
-	"encoding/json"
-	"errors"
-	"fmt"
-	"io/ioutil"
-	"log"
-	"net/http"
 
+	dkron "github.com/distribworks/dkron/v4/client"
+	"github.com/distribworks/dkron/v4/types"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/diag"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/validation"
@@ -25,303 +20,180 @@ func resourceDkronJob() *schema.Resource {
 			"name": {
 				Type:     schema.TypeString,
 				Required: true,
-				Optional: false,
-			},
-			"parent_job": {
-				Type:     schema.TypeString,
-				Required: false,
-				Optional: true,
-				Default:  nil,
-			},
-			"schedule": {
-				Type:     schema.TypeString,
-				Required: false,
-				Optional: true,
 			},
 			"timezone": {
 				Type:     schema.TypeString,
-				Required: false,
 				Optional: true,
+			},
+			"displayname": {
+				Type:     schema.TypeString,
+				Optional: true,
+			},
+			"schedule": {
+				Type:     schema.TypeString,
+				Required: true,
 			},
 			"owner": {
 				Type:     schema.TypeString,
-				Required: false,
-				Optional: true,
-			},
-			"retries": {
-				Type:     schema.TypeInt,
-				Required: false,
 				Optional: true,
 			},
 			"owner_email": {
 				Type:     schema.TypeString,
-				Required: false,
 				Optional: true,
 			},
 			"disabled": {
 				Type:     schema.TypeBool,
-				Required: false,
 				Optional: true,
-			},
-			"concurrency": {
-				Type:     schema.TypeString,
-				Required: false,
-				Optional: true,
-			},
-			"executor": {
-				Type:     schema.TypeString,
-				Required: true,
-				Optional: false,
-			},
-			"command": {
-				Type:     schema.TypeString,
-				Required: true,
-				Optional: false,
-			},
-			"env": {
-				Type:     schema.TypeString,
-				Required: true,
-				Optional: false,
-			},
-			"timeout": {
-				Type:     schema.TypeString,
-				Required: true,
-				Optional: false,
-			},
-			"cwd": {
-				Type:     schema.TypeString,
-				Required: false,
-				Optional: true,
-			},
-			"shell": {
-				Type:     schema.TypeBool,
-				Required: false,
-				Optional: true,
-			},
-			"mem_limit_kb": {
-				Type:     schema.TypeString,
-				Required: false,
-				Optional: true,
-			},
-			"project": {
-				Type:     schema.TypeString,
-				Required: true,
-				Optional: false,
-			},
-			"allowed_exitcodes": {
-				Type:     schema.TypeString,
-				Required: true,
-				Optional: false,
 			},
 			"tags": {
 				Type:     schema.TypeMap,
-				Required: true,
-				Optional: false,
+				Elem:     schema.TypeString,
+				Optional: true,
 			},
+			"retries": {
+				Type:     schema.TypeInt,
+				Optional: true,
+			},
+			"parent_job": {
+				Type:     schema.TypeString,
+				Optional: true,
+			},
+
+			"concurrency": {
+				Type:     schema.TypeString,
+				Optional: true,
+			},
+
+			"executor": {
+				Type:         schema.TypeString,
+				Required:     true,
+				ValidateFunc: validation.StringInSlice([]string{"gcppubsub", "grpc", "http", "kafka", "nats", "rabbitmq", "shell"}, false),
+			},
+			"executor_config": {
+				Type:     schema.TypeMap,
+				Elem:     schema.TypeString,
+				Optional: true,
+			},
+
+			"metadata": {
+				Type:     schema.TypeMap,
+				Elem:     schema.TypeString,
+				Optional: true,
+			},
+
 			"processors": {
 				Type:     schema.TypeList,
-				Required: true,
-				Optional: false,
+				Optional: true,
 				Elem: &schema.Resource{
 					Schema: map[string]*schema.Schema{
 						"type": {
 							Type:         schema.TypeString,
 							Required:     true,
-							Optional:     false,
-							ValidateFunc: validation.StringInSlice([]string{"files", "log", "syslog", "fluent"}, false),
+							ValidateFunc: validation.StringInSlice([]string{"files", "log", "syslog"}, false),
 						},
 						"forward": {
 							Type:     schema.TypeString,
 							Required: false,
-							Optional: true,
-							Default:  nil,
 						},
 						"log_dir": {
 							Type:     schema.TypeString,
 							Required: false,
-							Optional: true,
-							Default:  nil,
 						},
 					},
 				},
-			},
-			"dependent_jobs": {
-				Type:     schema.TypeList,
-				Required: false,
-				Optional: true,
-				Elem: &schema.Schema{
-					Type: schema.TypeString,
-				},
-				Default: nil,
 			},
 		},
 	}
 }
 
-type Job struct {
-	Name           string                 `json:"name"`
-	Schedule       string                 `json:"schedule"`
-	Owner          string                 `json:"owner"`
-	OwnerEmail     string                 `json:"owner_email"`
-	Disabled       bool                   `json:"disabled"`
-	Tags           map[string]interface{} `json:"tags"`
-	DependentJobs  []interface{}          `json:"dependent_jobs"`
-	Retries        int                    `json:"retries"`
-	Processors     map[string]interface{} `json:"processors"`
-	Concurrency    string                 `json:"concurrency"`
-	Executor       string                 `json:"executor"`
-	Timezone       string                 `json:"timezone"`
-	ParentJob      string                 `json:"parent_job"`
-	ExecutorConfig struct {
-		Command          string `json:"command"`
-		Env              string `json:"env"`
-		Timeout          string `json:"timeout"`
-		Project          string `json:"project"`
-		MemLimitKb       string `json:"mem_limit_kb"`
-		Cwd              string `json:"cwd"`
-		Shell            string `json:"shell"`
-		AllowedExitCodes string `json:"allowed_exitcodes"`
-	} `json:"executor_config"`
-}
-
-func resourceDkronJobCreate(ctx context.Context, d *schema.ResourceData, m interface{}) diag.Diagnostics {
-	// Warning or errors can be collected in a slice type
+func resourceDkronJobCreate(ctx context.Context, d *schema.ResourceData, m any) diag.Diagnostics {
 	var diags diag.Diagnostics
 
 	config := m.(DkronConfig)
-
-	job := new(Job)
-	job.Name = d.Get("name").(string)
-	job.ParentJob = d.Get("parent_job").(string)
-	job.Schedule = d.Get("schedule").(string)
-	job.Timezone = d.Get("timezone").(string)
-	job.Owner = d.Get("owner").(string)
-	job.OwnerEmail = d.Get("owner_email").(string)
-	job.Disabled = d.Get("disabled").(bool)
-	job.Retries = d.Get("retries").(int)
-	job.Executor = d.Get("executor").(string)
-	job.ExecutorConfig.Command = d.Get("command").(string)
-	job.ExecutorConfig.Env = d.Get("env").(string)
-	job.ExecutorConfig.Timeout = d.Get("timeout").(string)
-	job.ExecutorConfig.Project = d.Get("project").(string)
-	job.ExecutorConfig.MemLimitKb = d.Get("mem_limit_kb").(string)
-	job.ExecutorConfig.Cwd = d.Get("cwd").(string)
-	job.ExecutorConfig.AllowedExitCodes = d.Get("allowed_exitcodes").(string)
-	job.ExecutorConfig.Shell = "false"
-	if d.Get("shell").(bool) {
-		job.ExecutorConfig.Shell = "true"
+	client, err := dkron.NewClient(config.host)
+	if err != nil {
+		return diag.FromErr(err)
 	}
-	job.Concurrency = d.Get("concurrency").(string)
-	job.Tags = d.Get("tags").(map[string]interface{})
-	job.DependentJobs = d.Get("dependent_jobs").([]interface{})
-	job.Processors = make(map[string]interface{})
 
-	processors := d.Get("processors").([]interface{})
+	body := dkron.CreateOrUpdateJobJSONRequestBody{
+		Ephemeral: false,
+	}
+
+	body.Name = d.Get("name").(string)
+	body.Timezone = d.Get("timezone").(string)
+	body.Displayname = d.Get("displayname").(string)
+	body.Schedule = d.Get("schedule").(string)
+	body.Owner = d.Get("owner").(string)
+	body.OwnerEmail = d.Get("owner_email").(string)
+	body.Disabled = d.Get("disabled").(bool)
+	body.Tags = d.Get("tags").(map[string]string)
+	body.Retries = d.Get("retries").(uint32)
+	body.ParentJob = d.Get("parent_job").(string)
+	body.Concurrency = d.Get("concurrency").(string)
+	body.Executor = d.Get("executor").(string)
+	body.ExecutorConfig = d.Get("executor_config").(map[string]string)
+	body.Metadata = d.Get("metadata").(map[string]string)
+
+	processors := d.Get("processors").([]any)
 	for _, p := range processors {
-		processor := p.(map[string]interface{})
+		processor := p.(map[string]string)
+
+		ty := processor["type"]
+		delete(processor, "type")
+
 		if processor["forward"] == "" {
 			delete(processor, "forward")
 		}
 		if processor["log_dir"] == "" {
 			delete(processor, "log_dir")
 		}
-		job.Processors[processor["type"].(string)] = processor
+
+		body.Processors[ty] = &types.PluginConfig{
+			Config: processor,
+		}
 	}
 
-	endpoint := fmt.Sprintf("%s/v1/jobs", config.host)
-
-	log.Printf("[INFO] Posting job creation to %s endpoint", endpoint)
-
-	payload, err := json.Marshal(job)
-	if err != nil {
+	if _, err := client.CreateOrUpdateJob(ctx, nil, body); err != nil {
 		return diag.FromErr(err)
 	}
-
-	log.Printf("[INFO] Payload created. %s", payload)
-
-	request, err := http.NewRequest("POST", endpoint, bytes.NewBuffer(payload))
-	request.Header.Set("Content-Type", "application/json")
-	if err != nil {
-		return diag.FromErr(err)
-	}
-	log.Printf("[INFO] Post request created. ")
-
-	client := &http.Client{}
-	response, err := client.Do(request)
-	if err != nil {
-		return diag.FromErr(err)
-	}
-	log.Printf("[INFO] Request sent. ")
-
-	body, _ := ioutil.ReadAll(response.Body)
-	log.Println("response Status:", response.Status)
-	log.Println("response Headers:", response.Header)
-	log.Println("response Body:", string(body))
-
-	if response.StatusCode != 201 {
-		return diag.FromErr(errors.New(string(body)))
-	}
-
-	jobResponse := new(Job)
-	json.Unmarshal(body, &jobResponse)
-
-	d.SetId(jobResponse.Name)
 
 	return diags
 }
 
-func resourceDkronJobRead(ctx context.Context, d *schema.ResourceData, m interface{}) diag.Diagnostics {
-	// Warning or errors can be collected in a slice type
+func resourceDkronJobRead(ctx context.Context, d *schema.ResourceData, m any) diag.Diagnostics {
 	var diags diag.Diagnostics
 
 	config := m.(DkronConfig)
-	endpoint := fmt.Sprintf("%s/v1/jobs/%s", config.host, d.Id())
-	log.Printf("[INFO] Request to %s endpoint", endpoint)
-
-	request, err := http.NewRequest("GET", endpoint, bytes.NewBufferString(""))
-	request.Header.Set("Content-Type", "application/json")
+	client, err := dkron.NewClientWithResponses(config.host)
 	if err != nil {
 		return diag.FromErr(err)
 	}
-	log.Printf("[INFO] Request created. ")
 
-	client := &http.Client{}
-	response, err := client.Do(request)
+	response, err := client.ShowJobByNameWithResponse(ctx, d.Id())
 	if err != nil {
 		return diag.FromErr(err)
 	}
-	log.Printf("[INFO] Request sent. ")
 
-	body, _ := ioutil.ReadAll(response.Body)
-	log.Println("response Status:", response.Status)
-	log.Println("response Headers:", response.Header)
-	log.Println("response Body:", string(body))
-
-	job := new(Job)
-	json.Unmarshal(body, &job)
+	job := response.JSON200
 
 	d.Set("name", job.Name)
-	d.Set("parent_job", job.ParentJob)
-	d.Set("schedule", job.Schedule)
 	d.Set("timezone", job.Timezone)
+	d.Set("displayname", job.Displayname)
+	d.Set("schedule", job.Schedule)
 	d.Set("owner", job.Owner)
 	d.Set("owner_email", job.OwnerEmail)
-	d.Set("disalbed", job.Disabled)
-	d.Set("retries", job.Retries)
-	d.Set("executor", job.Executor)
-	d.Set("command", job.ExecutorConfig.Command)
-	d.Set("env", job.ExecutorConfig.Env)
-	d.Set("timeout", job.ExecutorConfig.Timeout)
-	d.Set("project", job.ExecutorConfig.Project)
-	d.Set("mem_limit_kb", job.ExecutorConfig.MemLimitKb)
-	d.Set("cwd", job.ExecutorConfig.Cwd)
-	d.Set("allowed_exitcodes", job.ExecutorConfig.AllowedExitCodes)
-	d.Set("concurrency", job.Concurrency)
+	d.Set("disabled", job.Disabled)
 	d.Set("tags", job.Tags)
-	d.Set("dependent_jobs", job.DependentJobs)
-	processors := make([]interface{}, 0)
+	d.Set("retries", job.Retries)
+	d.Set("parent_job", job.ParentJob)
+	d.Set("concurrency", job.Concurrency)
+	d.Set("executor", job.Executor)
+	d.Set("executor_config", job.ExecutorConfig)
+	d.Set("metadata", job.Metadata)
+
+	processors := make([]any, 0)
 	for i, p := range job.Processors {
-		processor := p.(map[string]interface{})
+		processor := p.Config
 		processor["type"] = i
 		processors = append(processors, processor)
 	}
@@ -330,7 +202,7 @@ func resourceDkronJobRead(ctx context.Context, d *schema.ResourceData, m interfa
 	return diags
 }
 
-func resourceDkronJobUpdate(ctx context.Context, d *schema.ResourceData, m interface{}) diag.Diagnostics {
+func resourceDkronJobUpdate(ctx context.Context, d *schema.ResourceData, m any) diag.Diagnostics {
 	old, new := d.GetChange("name")
 	if old != new {
 		resourceDkronJobDelete(ctx, d, m)
@@ -338,32 +210,18 @@ func resourceDkronJobUpdate(ctx context.Context, d *schema.ResourceData, m inter
 	return resourceDkronJobCreate(ctx, d, m)
 }
 
-func resourceDkronJobDelete(ctx context.Context, d *schema.ResourceData, m interface{}) diag.Diagnostics {
-	// Warning or errors can be collected in a slice type
+func resourceDkronJobDelete(ctx context.Context, d *schema.ResourceData, m any) diag.Diagnostics {
 	var diags diag.Diagnostics
 
 	config := m.(DkronConfig)
-	endpoint := fmt.Sprintf("%s/v1/jobs/%s", config.host, d.Id())
-	log.Printf("[INFO] Request to %s endpoint", endpoint)
-
-	request, err := http.NewRequest("DELETE", endpoint, bytes.NewBufferString(""))
-	request.Header.Set("Content-Type", "application/json")
+	client, err := dkron.NewClient(config.host)
 	if err != nil {
 		return diag.FromErr(err)
 	}
-	log.Printf("[INFO] Request created. ")
 
-	client := &http.Client{}
-	response, err := client.Do(request)
-	if err != nil {
+	if _, err := client.DeleteJob(ctx, d.Id()); err != nil {
 		return diag.FromErr(err)
 	}
-	log.Printf("[INFO] Request sent. ")
-
-	body, _ := ioutil.ReadAll(response.Body)
-	log.Println("response Status:", response.Status)
-	log.Println("response Headers:", response.Header)
-	log.Println("response Body:", string(body))
 
 	return diags
 }
