@@ -31,7 +31,7 @@ type DkronConfig struct {
 	host string
 }
 
-func providerConfigure(ctx context.Context, d *schema.ResourceData) (interface{}, diag.Diagnostics) {
+func providerConfigure(ctx context.Context, d *schema.ResourceData) (any, diag.Diagnostics) {
 	host := d.Get("host").(string)
 
 	// validate

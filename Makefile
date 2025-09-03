@@ -1,9 +1,9 @@
 TEST?=$$(go list ./... | grep -v 'vendor')
 HOSTNAME=registry.terraform.io
-NAMESPACE=bozerkins
+NAMESPACE=sylviettee
 NAME=dkron
 BINARY=terraform-provider-${NAME}
-VERSION=0.2.2
+VERSION=0.3
 OS_ARCH=linux_amd64
 
 default: install

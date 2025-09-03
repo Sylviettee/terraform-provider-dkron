@@ -93,11 +93,11 @@ func resourceDkronJob() *schema.Resource {
 						},
 						"forward": {
 							Type:     schema.TypeString,
-							Required: false,
+							Optional: true,
 						},
 						"log_dir": {
 							Type:     schema.TypeString,
-							Required: false,
+							Optional: true,
 						},
 					},
 				},

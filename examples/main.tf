@@ -1,8 +1,8 @@
 terraform {
   required_providers {
     dkron = {
-      version = "0.2"
-      source  = "registry.terraform.io/bozerkins/dkron"
+      version = "0.3"
+      source  = "registry.terraform.io/sylviettee/dkron"
     }
   }
 }
@@ -12,65 +12,35 @@ provider "dkron" {
 }
 
 resource "dkron_job" "job1_dms" {
-  name              = "job1_dms_1"
-  timezone          = "Europe/Riga"
-  owner             = "Gitlab"
-  owner_email       = "gitlab@gitlabovich.com"
-  executor          = "shell"
-  command           = "date"
-  env               = "ENV1=envone"
-  cwd               = ""
-  shell             = false
-  allowed_exitcodes = "0, 199, 255"
-  schedule          = "@every 10m"
-  timeout           = "9s"
-  mem_limit_kb      = "16384"
-  project           = "dms"
-  disabled          = false
-  retries           = 5
-  concurrency       = "forbid"
+  name        = "job1_dms_1"
+  timezone    = "Europe/Riga"
+  displayname = "job dms 1"
+  schedule    = "@every 10m"
+  owner       = "Gitlab"
+  owner_email = "gitlab@gitlabovich.com"
+  disabled    = false
+  retries     = 5
+  concurrency = "forbid"
+  executor    = "shell"
 
-  tags              = {
+  executor_config = {
+    "shell"   = true
+    "command" = "ls"
+    "env"     = "FOO=bar"
+  }
+
+  tags = {
     "dms" = "cron:1"
   }
 
-
-  # out to fluent
-  processors  {
+  # out to syslog
+  processors {
     forward = "true"
-    type = "fluent"
+    type    = "syslog"
   }
 
-  # output to stdin/stdou
-  processors  {
-    type = "log"
-  }
-}
-
-resource "dkron_job" "job2_dms" {
-  name              = "job1_dms_2"
-  timezone          = "Europe/Riga"
-  owner             = "Gitlab"
-  owner_email       = "gitlab@gitlabovich.com"
-  executor          = "shell"
-  command           = "date"
-  env               = "ENV1=envone,ENV2=envtwo"
-  cwd               = ""
-  shell             = false
-  allowed_exitcodes = "0, 199, 255"
-  schedule          = "@every 10m"
-  timeout           = "9s"
-  mem_limit_kb      = "16384"
-  project           = "dms"
-  disabled          = false
-  retries           = 5
-  concurrency       = "forbid"
-
-  tags              = {
-    "dms" = "cron:1"
-  }
-
-  processors  {
+  # output to stdin/stdout
+  processors {
     type = "log"
   }
 }
