@@ -1,7 +1,7 @@
 terraform {
   required_providers {
     dkron = {
-      version = "0.3"
+      version = "0.3.1"
       source  = "registry.terraform.io/sylviettee/dkron"
     }
   }
